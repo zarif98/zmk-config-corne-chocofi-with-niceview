@@ -1,5 +1,56 @@
-on: [push, pull_request, workflow_dispatch]
+name: Build ZMK Firmware
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
-    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@main
+    runs-on: ubuntu-latest
+    name: Build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install west pyelftools
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache dfu-util
+
+      - name: West Init
+        run: west init -l config
+
+      - name: West Update
+        run: west update
+
+      - name: West Zephyr Export
+        run: west zephyr-export
+
+      - name: Install pip dependencies
+        run: pip install -r zephyr/scripts/requirements.txt
+
+      - name: Build (corne_left with nice_view)
+        run: |
+          west build -s zmk/app -b nice_nano_v2 -- -DSHIELD="corne_left nice_view_adapter nice_view" -DZMK_CONFIG="${GITHUB_WORKSPACE}/config"
+          mv build/zephyr/zmk.uf2 corne_left_nice_nano_v2.uf2
+
+      - name: Build (corne_right with nice_view)
+        run: |
+          rm -rf build
+          west build -s zmk/app -b nice_nano_v2 -- -DSHIELD="corne_right nice_view_adapter nice_view" -DZMK_CONFIG="${GITHUB_WORKSPACE}/config"
+          mv build/zephyr/zmk.uf2 corne_right_nice_nano_v2.uf2
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            corne_left_nice_nano_v2.uf2
+            corne_right_nice_nano_v2.uf2
